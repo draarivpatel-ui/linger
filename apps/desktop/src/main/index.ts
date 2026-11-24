@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   Notification,
   app,
+  clipboard,
   desktopCapturer,
   dialog,
   powerMonitor,
@@ -30,6 +31,7 @@ import { dialogMessages } from "./dialogs.messages.js";
 import { DiagnosticsModule } from "./diagnostics.js";
 import { EnrollmentModule } from "./enrollment.js";
 import { LanguageModule } from "./language.js";
+import { LocalGatewayService } from "./local-gateway.js";
 import {
   LocalServerModule,
   signInWithPassword,
@@ -346,6 +348,20 @@ async function main(): Promise<void> {
     new TrayModule({ quit: () => void quit() }),
     new DesktopIpcModule({
       defaultDisplayName,
+      localGateway: new LocalGatewayService({
+        home: () => home,
+        runtimeEnvironment: () => config.get().runtimeEnvironment,
+        clipboard: {
+          writeText: async (text) => clipboard.writeText(text),
+          readText: async () => clipboard.readText(),
+          clear: () => clipboard.clear(),
+        },
+        openExternal: (url) =>
+          process.platform === "linux"
+            ? openWithXdg(url)
+            : shell.openExternal(url),
+        showFile: (file) => shell.showItemInFolder(file),
+      }),
       ...(desktopPermissions ? { permissions: desktopPermissions } : {}),
     }),
   ];

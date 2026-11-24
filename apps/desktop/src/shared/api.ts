@@ -54,6 +54,16 @@ export type DesktopPermissionStep =
     }
   | { readonly action: "relaunch"; readonly subject: "linger" };
 
+// Metadata about this computer's locally managed Bifrost gateway. Passwords
+// are never included here; revealing or copying requires an explicit action.
+export interface DesktopLocalGatewayInfo {
+  readonly available: boolean;
+  readonly adminUrl?: string;
+  readonly username?: string;
+  readonly hasPassword?: boolean;
+  readonly inferenceAuthDisabled?: boolean;
+}
+
 // The updater's progress as the page sees it; the same states the tray shows.
 export type DesktopUpdateState =
   | { readonly kind: "idle" }
@@ -172,6 +182,19 @@ export interface LingerDesktopApi {
   readonly diagnostics: {
     save(): Promise<void>;
   };
+  // Local-only access to this computer's managed Bifrost gateway credentials
+  // and folder. Absent in a browser and in older desktop builds, and gated to
+  // the desktop's own enrolled computerId.
+  readonly localGateway?: {
+    getInfo(computerId: string): Promise<DesktopLocalGatewayInfo>;
+    revealPassword(computerId: string): Promise<{ readonly password: string }>;
+    copyPassword(computerId: string): Promise<{
+      readonly copied: boolean;
+      readonly clearAfterMs: number;
+    }>;
+    openAdmin(computerId: string): Promise<void>;
+    openFolder(computerId: string): Promise<void>;
+  };
   // macOS only.
   readonly permissions?: {
     act(step: DesktopPermissionStep): Promise<void>;
@@ -208,4 +231,9 @@ export const IPC = {
   voiceWindowShowMain: "voice-window.show-main",
   languageSet: "language.set",
   diagnosticsSave: "diagnostics.save",
+  localGatewayInfo: "local-gateway.info",
+  localGatewayRevealPassword: "local-gateway.reveal-password",
+  localGatewayCopyPassword: "local-gateway.copy-password",
+  localGatewayOpenAdmin: "local-gateway.open-admin",
+  localGatewayOpenFolder: "local-gateway.open-folder",
 } as const;

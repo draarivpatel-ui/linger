@@ -3,6 +3,7 @@ import {
   Alert02Icon,
   InformationCircleIcon,
   RefreshIcon,
+  SlidersHorizontalIcon,
 } from "@hugeicons/core-free-icons";
 import {
   useMutation,
@@ -211,6 +212,10 @@ export function ModelsPage() {
         <ComputerModels
           computerId={sharedId}
           defaultComputerName={defaultComputer?.display_name}
+          isDesktopComputer={
+            Boolean(desktop?.status?.computerId) &&
+            desktop?.status?.computerId === sharedId
+          }
           key={sharedId}
           onOpenDefaultComputer={
             defaultComputer
@@ -226,6 +231,10 @@ export function ModelsPage() {
           computer={computer}
           computerId={computer.computer_id}
           displayName={computer.display_name}
+          isDesktopComputer={
+            Boolean(desktop?.status?.computerId) &&
+            desktop?.status?.computerId === computer.computer_id
+          }
           key={computer.computer_id}
           onSelectComputer={select}
           ownedComputers={computers}
@@ -367,7 +376,8 @@ function MemorySummaryCard({
             </Button>
           ) : null}
           <Button onClick={onDetails} size="compact">
-            {t(m.details)}
+            <Icon icon={SlidersHorizontalIcon} size={14} />
+            {t(m.advanced)}
           </Button>
         </div>
       </div>
@@ -456,6 +466,7 @@ function ComputerModels({
   computerId,
   defaultComputerName,
   displayName,
+  isDesktopComputer = false,
   onOpenDefaultComputer,
   onSelectComputer,
   ownedComputers,
@@ -466,6 +477,7 @@ function ComputerModels({
   defaultComputerName?: string;
   /** Absent for a Computer outside the viewer's own inventory. */
   displayName?: string;
+  isDesktopComputer?: boolean;
   onOpenDefaultComputer?: () => void;
   onSelectComputer: (computerId: string) => void;
   ownedComputers: readonly InventoryComputer[];
@@ -722,7 +734,8 @@ function ComputerModels({
                 onClick={() => setDialog({ kind: "advanced" })}
                 size="compact"
               >
-                {t(m.details)}
+                <Icon icon={SlidersHorizontalIcon} size={14} />
+                {t(m.advanced)}
               </Button>
             ) : null}
           </div>
@@ -823,6 +836,7 @@ function ComputerModels({
             computer={computer}
             dialog={dialog}
             guidance={guidance}
+            isDesktopComputer={isDesktopComputer}
             offline={offline}
             onRefresh={recheckMemory}
             onSwitchToByok={status ? () => changeTab("byok") : undefined}
@@ -920,6 +934,7 @@ function Library({
   computer,
   dialog,
   guidance,
+  isDesktopComputer = false,
   offline: computerOffline,
   onRefresh,
   onSwitchToByok,
@@ -936,6 +951,7 @@ function Library({
   computer?: InventoryComputer;
   dialog: Dialog | null;
   guidance: ReturnType<typeof memoryGuidance>;
+  isDesktopComputer?: boolean;
   offline: boolean;
   onRefresh: () => void;
   onSwitchToByok?: () => void;
@@ -1643,6 +1659,7 @@ function Library({
       {dialog?.kind === "advanced" ? (
         <AdvancedDialog
           gatewayUrl={status?.gateway_url}
+          isDesktopComputer={isDesktopComputer}
           onClose={() => setDialog(null)}
           view={view}
         />

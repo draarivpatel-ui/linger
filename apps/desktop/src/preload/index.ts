@@ -105,6 +105,18 @@ const api: LingerDesktopApi = {
   diagnostics: {
     save: () => ipcRenderer.invoke(IPC.diagnosticsSave),
   },
+  localGateway: {
+    getInfo: (computerId) =>
+      ipcRenderer.invoke(IPC.localGatewayInfo, computerId),
+    revealPassword: (computerId) =>
+      ipcRenderer.invoke(IPC.localGatewayRevealPassword, computerId),
+    copyPassword: (computerId) =>
+      ipcRenderer.invoke(IPC.localGatewayCopyPassword, computerId),
+    openAdmin: (computerId) =>
+      ipcRenderer.invoke(IPC.localGatewayOpenAdmin, computerId),
+    openFolder: (computerId) =>
+      ipcRenderer.invoke(IPC.localGatewayOpenFolder, computerId),
+  },
   ...(process.platform === "darwin"
     ? {
         permissions: {
