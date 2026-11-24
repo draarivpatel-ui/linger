@@ -43,6 +43,8 @@ export interface SetupReason {
   detectedCudaVersion?: string;
   /** On CUDA driver reasons: the minimum CUDA version the pinned engine needs. */
   requiredCudaVersion?: string;
+  /** On CUDA driver reasons: the minimum NVIDIA driver branch when known. */
+  requiredDriverVersion?: string;
   /** On CUDA driver reasons: the installed NVIDIA driver version when known. */
   driverVersion?: string;
 }
@@ -324,6 +326,7 @@ export async function inspectSetup(
             requiredBytes,
             detectedCudaVersion,
             requiredCudaVersion,
+            requiredDriverVersion,
             driverVersion,
           }) => ({
             code,
@@ -333,6 +336,9 @@ export async function inspectSetup(
             ...(ok(requiredBytes) ? { requiredBytes } : {}),
             ...(version(detectedCudaVersion) ? { detectedCudaVersion } : {}),
             ...(version(requiredCudaVersion) ? { requiredCudaVersion } : {}),
+            ...(version(requiredDriverVersion)
+              ? { requiredDriverVersion }
+              : {}),
             ...(version(driverVersion) ? { driverVersion } : {}),
           }),
         ),
