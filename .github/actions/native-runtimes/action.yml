@@ -47,8 +47,11 @@ runs:
         fi
         echo "codex=$CODEX" >>"$GITHUB_OUTPUT"
         echo "claude=$CLAUDE" >>"$GITHUB_OUTPUT"
-    # Each build is hundreds of MB; a version's files never change.
-    - uses: actions/cache@v6
+    # Each build is hundreds of MB and a version's files never change. Like the
+    # repository's other caches, pull requests only restore; pushes and
+    # scheduled runs save.
+    - id: cache
+      uses: actions/cache/restore@v6
       with:
         path: ~/.cache/linger-native-runtimes
         key: native-runtimes-${{ runner.os }}-codex-${{ steps.resolve.outputs.codex }}-claude-${{ steps.resolve.outputs.claude }}
@@ -75,12 +78,20 @@ runs:
         if [ -n "$CLAUDE" ]; then
           dir="$cache/claude/$CLAUDE"
           mkdir -p "$dir"
-          checksum=$(curl -fsSL "$CLAUDE_BASE/$CLAUDE/manifest.json" | jq -er '.platforms["linux-x64"].checksum')
-          if ! echo "$checksum  $dir/claude" | sha256sum -c --status - 2>/dev/null; then
+          # A cached binary is checked against the checksum stored beside it
+          # when it was downloaded, so a hit needs no release server.
+          if ! (cd "$dir" && sha256sum -c --status claude.sha256 2>/dev/null); then
+            checksum=$(curl -fsSL "$CLAUDE_BASE/$CLAUDE/manifest.json" | jq -er '.platforms["linux-x64"].checksum')
             curl -fsSL -o "$dir/claude" "$CLAUDE_BASE/$CLAUDE/linux-x64/claude"
-            echo "$checksum  $dir/claude" | sha256sum -c -
+            echo "$checksum  claude" >"$dir/claude.sha256"
+            (cd "$dir" && sha256sum -c claude.sha256)
           fi
           chmod +x "$dir/claude"
           "$dir/claude" --version | grep -q "^$CLAUDE " || { echo "::error::Claude Code does not report $CLAUDE"; exit 1; }
           echo "claude=$dir/claude" >>"$GITHUB_OUTPUT"
         fi
+    - if: steps.cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/.cache/linger-native-runtimes
+        key: native-runtimes-${{ runner.os }}-codex-${{ steps.resolve.outputs.codex }}-claude-${{ steps.resolve.outputs.claude }}
