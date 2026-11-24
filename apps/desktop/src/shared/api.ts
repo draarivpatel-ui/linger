@@ -127,6 +127,11 @@ export interface LingerDesktopApi {
     available(): Promise<boolean>;
     signIn(): Promise<LocalAccountSignIn>;
   };
+  // Whether the window is pointed at this app's own local installation,
+  // independent of startup/resume readiness.
+  readonly localServer: {
+    owned(): Promise<boolean>;
+  };
   // The app's own updates, as in the tray.
   readonly update: {
     getState(): Promise<DesktopUpdateState>;
@@ -192,6 +197,7 @@ export const IPC = {
   permissionAct: "permission.act",
   localAccountAvailable: "local-account.available",
   localAccountSignIn: "local-account.sign-in",
+  localServerOwned: "local-server.owned",
   updateState: "update.state",
   updateStateEvent: "update.state.event",
   updateInstall: "update.install",

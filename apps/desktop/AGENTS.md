@@ -491,7 +491,10 @@ Gateway and runs Agents. The daemon exits with the app.
   `update` reads the Updater's state (without the release page URL) and runs
   the tray's install and check, for the SPA's account menu; `settings` exposes
   `preventSleep` (`get`, `set`, `onChange`) so Settings › Computers mirrors and
-  stays in sync with the tray's Prevent Sleep toggle.
+  stays in sync with the tray's Prevent Sleep toggle; and `localServer.owned()`
+  reports whether the window points at this app's own local installation
+  regardless of startup/resume readiness, so the SPA can hide CLI daemon
+  download entry points even during hot start or install-time preload.
 - `src/shared/api.ts`, `src/shared/shell.ts`: preload contract types and IPC
   channel names.
 - `src/main/computer-daemon.ts`: ComputerDaemon. While the computer is
