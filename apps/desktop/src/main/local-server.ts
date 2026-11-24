@@ -1142,11 +1142,7 @@ export class LocalServerModule implements Module {
       const counted = (key: "gpuIndex" | "freeBytes" | "requiredBytes") =>
         bytes(reason[key]) !== null ? { [key]: reason[key] as number } : {};
       const versioned = (
-        key:
-          | "detectedCudaVersion"
-          | "requiredCudaVersion"
-          | "requiredDriverVersion"
-          | "driverVersion",
+        key: "detectedCudaVersion" | "requiredCudaVersion" | "driverVersion",
       ) => {
         const value = version(reason[key]);
         return value !== null ? { [key]: value } : {};
@@ -1158,7 +1154,6 @@ export class LocalServerModule implements Module {
         ...counted("requiredBytes"),
         ...versioned("detectedCudaVersion"),
         ...versioned("requiredCudaVersion"),
-        ...versioned("requiredDriverVersion"),
         ...versioned("driverVersion"),
       };
     });

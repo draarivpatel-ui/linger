@@ -6,7 +6,6 @@ import {
   NVIDIA_SMI_VERIFY_COMMAND,
   classifyWindowsNvidiaGpu,
   compareDriverVersions,
-  defaultLinuxNvidiaDistro,
   isAllowedNvidiaDownloadUrl,
   linuxNvidiaDriverCommand,
   minNvidiaDriverForCuda,
@@ -40,11 +39,7 @@ describe("nvidia-driver helpers", () => {
     expect(resolveRequiredNvidiaDriver(undefined, undefined)).toBeUndefined();
   });
 
-  it("selects Linux distro defaults and copyable update commands", () => {
-    expect(defaultLinuxNvidiaDistro("Ubuntu 24.04")).toBe("ubuntu");
-    expect(defaultLinuxNvidiaDistro("Debian 12")).toBe("ubuntu");
-    expect(defaultLinuxNvidiaDistro("Fedora 41")).toBe("fedora");
-    expect(defaultLinuxNvidiaDistro("Arch Linux")).toBe("generic");
+  it("builds copyable Linux driver update commands for Ubuntu and Fedora", () => {
     expect(linuxNvidiaDriverCommand("ubuntu", "580")).toBe(
       "sudo apt update && sudo apt install -y nvidia-driver-580 && sudo reboot",
     );
@@ -56,7 +51,7 @@ describe("nvidia-driver helpers", () => {
     );
   });
 
-  it("allows only HTTPS .exe URLs on official NVIDIA download hosts", () => {
+  it("allows only standard-port HTTPS .exe URLs on official NVIDIA download hosts", () => {
     expect(
       isAllowedNvidiaDownloadUrl(
         "https://us.download.nvidia.com/Windows/621.24/621.24-desktop-win10-win11-64bit-international-dch-whql.exe",
@@ -70,6 +65,11 @@ describe("nvidia-driver helpers", () => {
     expect(
       isAllowedNvidiaDownloadUrl(
         "http://us.download.nvidia.com/Windows/621.24/driver.exe",
+      ),
+    ).toBe(false);
+    expect(
+      isAllowedNvidiaDownloadUrl(
+        "https://us.download.nvidia.com:8443/Windows/621.24/driver.exe",
       ),
     ).toBe(false);
     expect(

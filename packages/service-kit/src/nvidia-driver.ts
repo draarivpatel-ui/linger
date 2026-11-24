@@ -90,11 +90,11 @@ export type DesktopDriverInstallState =
     }
   | { readonly phase: "failed"; readonly code: string };
 
-export type LinuxNvidiaDistro = "ubuntu" | "fedora" | "generic";
+export type LinuxNvidiaDistro = "ubuntu" | "fedora";
 
 /**
- * Accepts only HTTPS installer URLs hosted directly on NVIDIA's official CDN
- * allowlist, without embedded credentials.
+ * Accepts only standard-port HTTPS installer URLs hosted directly on NVIDIA's
+ * official CDN allowlist, without embedded credentials.
  */
 export function isAllowedNvidiaDownloadUrl(rawUrl: string): boolean {
   let parsed: URL;
@@ -104,6 +104,7 @@ export function isAllowedNvidiaDownloadUrl(rawUrl: string): boolean {
     return false;
   }
   if (parsed.protocol !== "https:") return false;
+  if (parsed.port) return false;
   if (parsed.username || parsed.password) return false;
   const host = parsed.hostname.toLowerCase();
   if (!NVIDIA_DOWNLOAD_HOSTS.includes(host)) return false;
@@ -181,36 +182,6 @@ export function resolveRequiredNvidiaDriver(
   return minNvidiaDriverForCuda(requiredCuda);
 }
 
-/**
- * Picks the initial Linux command tab from a host's `os_label` display string
- * (for example `Ubuntu 24.04` or `Fedora 41`). Both distro tabs remain
- * selectable in the UI so users can switch if their distro differs.
- */
-export function defaultLinuxNvidiaDistro(
-  osLabel: string | null | undefined,
-): LinuxNvidiaDistro {
-  const lower = (osLabel ?? "").toLowerCase();
-  if (
-    lower.includes("ubuntu") ||
-    lower.includes("debian") ||
-    lower.includes("pop") ||
-    lower.includes("mint")
-  ) {
-    return "ubuntu";
-  }
-  if (
-    lower.includes("fedora") ||
-    lower.includes("rhel") ||
-    lower.includes("red hat") ||
-    lower.includes("centos") ||
-    lower.includes("rocky") ||
-    lower.includes("alma")
-  ) {
-    return "fedora";
-  }
-  return "generic";
-}
-
 /** Copyable shell command for updating the NVIDIA display driver on Linux. */
 export function linuxNvidiaDriverCommand(
   distro: LinuxNvidiaDistro,
@@ -227,9 +198,5 @@ export function linuxNvidiaDriverCommand(
         : "sudo ubuntu-drivers install && sudo reboot";
     case "fedora":
       return "sudo dnf upgrade --refresh akmod-nvidia xorg-x11-drv-nvidia-cuda && sudo reboot";
-    case "generic":
-      return branch
-        ? `sudo apt update && sudo apt install -y nvidia-driver-${branch} && sudo reboot`
-        : "sudo ubuntu-drivers install && sudo reboot";
   }
 }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { isInkling2MiniModelId } from "@linger/service-kit/featured-models";
+import { minNvidiaDriverForCuda } from "@linger/service-kit/nvidia-driver";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Language } from "../i18n/language.js";
@@ -98,6 +99,7 @@ const openPage = async (
       featuredAnnouncementUrl: INKLING_2_MINI_ANNOUNCEMENT_URL,
       nvidiaDriverDownloadUrl: NVIDIA_DRIVER_DOWNLOAD_URL,
       nvidiaDriverGuideUrl: NVIDIA_DRIVER_GUIDE_URL,
+      minDriverForCuda: minNvidiaDriverForCuda,
       getState: async () => current,
       onState: (callback: (next: SetupState) => void) => {
         listener = callback;
@@ -456,7 +458,7 @@ describe("setup page Quick Install recommendation", () => {
     };
     const { run } = await openPage(welcome(blockedCuda), "welcome");
     expect($("plan-why").textContent).toBe(
-      "Local model on hold. Your NVIDIA driver supports CUDA 12.1, but local models require CUDA 12.4 or newer. Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again. Quick Install sets up Codex now.",
+      "Local model on hold. Your NVIDIA driver supports CUDA 12.1, but local models require NVIDIA driver 550+ (CUDA 12.4). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again. Quick Install sets up Codex now.",
     );
     expect(
       $("plan-why").textContent?.match(/choose Check again/g),
@@ -491,7 +493,7 @@ describe("setup page Quick Install recommendation", () => {
       "On hold: update your NVIDIA driver, then Check again.",
     );
     expect($("local-model-needs").textContent).toBe(
-      "Your NVIDIA driver supports CUDA 12.1, but local models require CUDA 12.4 or newer. Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+      "Your NVIDIA driver supports CUDA 12.1, but local models require NVIDIA driver 550+ (CUDA 12.4). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
     );
     expect(($("local-model") as HTMLButtonElement).disabled).toBe(true);
     $("local-recheck").click();
@@ -531,7 +533,20 @@ describe("setup page Quick Install recommendation", () => {
             }),
           ],
         },
-        "Your NVIDIA driver supports CUDA 12.1, but local models require CUDA 12.4 or newer. Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+        "Your NVIDIA driver supports CUDA 12.1, but local models require NVIDIA driver 550+ (CUDA 12.4). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+      ],
+      [
+        {
+          ...small,
+          reasons: [
+            reason({
+              code: "cuda-driver-update-required",
+              detectedCudaVersion: "11.4",
+              requiredCudaVersion: "11.8",
+            }),
+          ],
+        },
+        "Your NVIDIA driver supports CUDA 11.4, but local models require CUDA 11.8 or newer. Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
       ],
       [
         {
@@ -543,7 +558,19 @@ describe("setup page Quick Install recommendation", () => {
             }),
           ],
         },
-        "Your NVIDIA driver is too old for local models (requires CUDA 12.4 or newer). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+        "Your NVIDIA driver is too old for local models (requires NVIDIA driver 550+ / CUDA 12.4). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+      ],
+      [
+        {
+          ...small,
+          reasons: [
+            reason({
+              code: "cuda-driver-update-required",
+              requiredCudaVersion: "11.8",
+            }),
+          ],
+        },
+        "Your NVIDIA driver is too old for local models (requires CUDA 11.8 or newer). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
       ],
       [
         {
@@ -624,7 +651,7 @@ describe("setup page Quick Install recommendation", () => {
       "welcome",
     );
     expect($("plan-why").textContent).toBe(
-      "Your NVIDIA driver supports CUDA 12.1, but local models require CUDA 12.4 or newer. Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+      "Your NVIDIA driver supports CUDA 12.1, but local models require NVIDIA driver 550+ (CUDA 12.4). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
     );
     expect($("local-recheck").hidden).toBe(false);
     $("local-customize").click();
@@ -637,7 +664,7 @@ describe("setup page Quick Install recommendation", () => {
       "Not available on this computer",
     );
     expect($("local-model-needs").textContent).toBe(
-      "Your NVIDIA driver supports CUDA 12.1, but local models require CUDA 12.4 or newer. Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
+      "Your NVIDIA driver supports CUDA 12.1, but local models require NVIDIA driver 550+ (CUDA 12.4). Update your NVIDIA graphics driver (no CUDA Toolkit needed), then choose Check again.",
     );
     expect(($("local-install") as HTMLButtonElement).disabled).toBe(true);
     $("local-recheck").click();
@@ -657,7 +684,6 @@ describe("setup page Quick Install recommendation", () => {
             code: "cuda-driver-update-required",
             detectedCudaVersion: "12.8",
             requiredCudaVersion: "13.0",
-            requiredDriverVersion: "580",
             driverVersion: "572.83",
           }),
         ],
@@ -1604,7 +1630,6 @@ describe("setup page Inkling 2 Mini featured spotlight", () => {
           code: "cuda-driver-update-required",
           detectedCudaVersion: "12.8",
           requiredCudaVersion: "13.0",
-          requiredDriverVersion: "580",
           driverVersion: "572.83",
         },
       ],

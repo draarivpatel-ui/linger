@@ -190,7 +190,6 @@ export interface SetupReason {
   // On cuda-driver-update-required / cuda-driver-version-unknown: numeric versions.
   readonly detectedCudaVersion?: string;
   readonly requiredCudaVersion?: string;
-  readonly requiredDriverVersion?: string;
   readonly driverVersion?: string;
 }
 
@@ -394,6 +393,7 @@ export interface LingerSetupApi {
   readonly featuredAnnouncementUrl: SetupExternalUrl;
   readonly nvidiaDriverDownloadUrl: SetupExternalUrl;
   readonly nvidiaDriverGuideUrl: SetupExternalUrl;
+  minDriverForCuda(requiredCuda: string | undefined): string | undefined;
   getState(): Promise<SetupState>;
   onState(callback: (state: SetupState) => void): () => void;
   run(command: SetupCommand): Promise<SetupState>;

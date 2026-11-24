@@ -4,7 +4,7 @@ import {
   type DesktopDriverInstallState,
 } from "@linger/service-kit/nvidia-driver";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -319,7 +319,6 @@ describe("DriverUpdater", () => {
     });
     expect(pending).toEqual({
       targetVersion: "621.24",
-      requiredCuda: "13.0",
       resumeModelId: "inkling-2-mini-q3-poly:UD-Q3_K_XL",
       updatedAt: "2026-11-24T12:00:00.000Z",
     });
@@ -544,5 +543,104 @@ describe("DriverUpdater", () => {
       phase: "failed",
       code: "UAC_CANCELLED",
     });
+  });
+
+  it("transitions cleanly to DOWNLOAD_FAILED without unhandled rejection when downloadDirectory cannot be created", async () => {
+    const tempDir = await makeTempDir();
+    const blockingFile = path.join(tempDir, "not-a-directory");
+    await writeFile(blockingFile, "occupied");
+    const busyEvents: boolean[] = [];
+
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).includes("AjaxDriverService.php")) {
+        return new Response(JSON.stringify(lookupJson("621.24")), {
+          status: 200,
+        });
+      }
+      return bytesResponse("installer-bytes");
+    });
+
+    const updater = new DriverUpdater({
+      platform: "win32",
+      arch: "x64",
+      existsSync: () => false,
+      env: {},
+      launchExecutable: vi.fn(),
+      openExternal: vi.fn(),
+      onBusyChange: (busy) => busyEvents.push(busy),
+      directInstall: {
+        downloadDirectory: path.join(blockingFile, "nested"),
+        fetch: fetchMock as typeof fetch,
+        detectGpuName: vi.fn(async () => "NVIDIA GeForce RTX 5060"),
+        verifyAuthenticode: vi.fn(),
+        runInstaller: vi.fn(),
+        readPendingUpdate: () => undefined,
+        writePendingUpdate: vi.fn(),
+      },
+    });
+
+    expect(
+      await updater.startInstall({
+        gpuName: "NVIDIA GeForce RTX 5060",
+        requiredCuda: "13.0",
+      }),
+    ).toEqual({ ok: true });
+    await expect(updater.waitForIdle()).resolves.toBeUndefined();
+    expect(updater.installState()).toEqual({
+      phase: "failed",
+      code: "DOWNLOAD_FAILED",
+    });
+    expect(busyEvents.at(-1)).toBe(false);
+  });
+
+  it("returns busy for concurrent startInstall calls while GPU detection is in flight", async () => {
+    const downloadDirectory = await makeTempDir();
+    let resolveGpu!: (value: string | undefined) => void;
+    const detectGpuName = vi.fn(
+      () =>
+        new Promise<string | undefined>((resolve) => {
+          resolveGpu = resolve;
+        }),
+    );
+    const runInstaller = vi.fn(async () => ({ outcome: "completed" as const }));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).includes("AjaxDriverService.php")) {
+        return new Response(JSON.stringify(lookupJson("621.24")), {
+          status: 200,
+        });
+      }
+      return bytesResponse("installer-bytes");
+    });
+
+    const updater = new DriverUpdater({
+      platform: "win32",
+      arch: "x64",
+      existsSync: () => false,
+      env: {},
+      launchExecutable: vi.fn(),
+      openExternal: vi.fn(),
+      directInstall: {
+        downloadDirectory,
+        fetch: fetchMock as typeof fetch,
+        detectGpuName,
+        verifyAuthenticode: vi.fn(async () => ({
+          valid: true,
+          subject: "CN=NVIDIA Corporation",
+        })),
+        runInstaller,
+        readPendingUpdate: () => undefined,
+        writePendingUpdate: vi.fn(),
+      },
+    });
+
+    const first = updater.startInstall({ requiredCuda: "13.0" });
+    const second = await updater.startInstall({ requiredCuda: "13.0" });
+    expect(second).toEqual({ ok: false, reason: "busy" });
+
+    resolveGpu("NVIDIA GeForce RTX 5060");
+    expect(await first).toEqual({ ok: true });
+    await updater.waitForIdle();
+    expect(detectGpuName).toHaveBeenCalledOnce();
+    expect(runInstaller).toHaveBeenCalledOnce();
   });
 });

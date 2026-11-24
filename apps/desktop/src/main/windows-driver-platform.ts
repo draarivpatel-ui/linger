@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 
 import type {
@@ -8,8 +9,103 @@ import type {
 
 const runFile = promisify(execFile);
 
-const POWERSHELL = "powershell.exe";
+const EXPECTED_SIGNER_CN = "NVIDIA Corporation";
 const BASE_ARGS = ["-NoProfile", "-NonInteractive", "-Command"] as const;
+
+function windowsPowerShellPath(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const systemRoot = env.SystemRoot?.trim() || "C:\\Windows";
+  return path.win32.join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+}
+
+/**
+ * Extracts the exact Common Name (CN) relative distinguished name from an X.509
+ * subject string such as `CN=NVIDIA Corporation, O=NVIDIA Corporation, C=US`.
+ * Prevents spoofing via OU/L attributes or substring matches like `CN=Fake NVIDIA Corporation`.
+ */
+function extractSubjectCommonName(subject: string): string | undefined {
+  const match = /(?:^|,\s*)CN=(?:"([^"]+)"|([^,]+))(?=,|$)/i.exec(
+    subject.trim(),
+  );
+  const raw = match?.[1] ?? match?.[2];
+  return raw?.trim() || undefined;
+}
+
+/**
+ * Parses the structured JSON emitted by `Get-AuthenticodeSignature` and
+ * verifies both a `Valid` Windows trust-store status and an exact
+ * `NVIDIA Corporation` signer Common Name.
+ */
+export function parseAuthenticodeOutput(
+  stdout: string,
+): AuthenticodeCheckResult {
+  try {
+    const parsed: unknown = JSON.parse(stdout.trim());
+    if (!parsed || typeof parsed !== "object") {
+      return { valid: false };
+    }
+    const record = parsed as {
+      Status?: unknown;
+      Subject?: unknown;
+      SimpleName?: unknown;
+    };
+    const status = typeof record.Status === "string" ? record.Status : "";
+    const subject = typeof record.Subject === "string" ? record.Subject : "";
+    const simpleName =
+      typeof record.SimpleName === "string" ? record.SimpleName.trim() : "";
+    const commonName = extractSubjectCommonName(subject);
+    const signerMatches =
+      commonName === EXPECTED_SIGNER_CN &&
+      (!simpleName || simpleName === EXPECTED_SIGNER_CN);
+    return {
+      valid: status === "Valid" && signerMatches,
+      subject,
+    };
+  } catch {
+    return { valid: false };
+  }
+}
+
+/**
+ * Parses the structured JSON emitted by `runWindowsDriverInstaller`.
+ * Classifies Win32 `ERROR_CANCELLED` (`1223`) directly from `NativeErrorCode`
+ * so UAC cancellation works identically across all Windows locales without
+ * matching localized error prose.
+ */
+export function parseWindowsInstallerRunOutput(
+  stdout: string,
+): WindowsInstallerRunResult {
+  try {
+    const parsed: unknown = JSON.parse(stdout.trim());
+    if (!parsed || typeof parsed !== "object") {
+      return { outcome: "failed" };
+    }
+    const record = parsed as { exitCode?: unknown; win32Error?: unknown };
+    if (record.win32Error === 1223) {
+      return { outcome: "uac_cancelled" };
+    }
+    if (
+      typeof record.exitCode === "number" &&
+      Number.isInteger(record.exitCode)
+    ) {
+      if (record.exitCode === 0) return { outcome: "completed" };
+      if (record.exitCode === 1 || record.exitCode === 3010) {
+        return { outcome: "reboot_required" };
+      }
+      return { outcome: "failed", exitCode: record.exitCode };
+    }
+    return { outcome: "failed" };
+  } catch {
+    return { outcome: "failed" };
+  }
+}
 
 /**
  * Probes the first NVIDIA graphics adapter display name on Windows via CIM.
@@ -20,7 +116,7 @@ export async function detectWindowsNvidiaGpuName(): Promise<
 > {
   try {
     const { stdout } = await runFile(
-      POWERSHELL,
+      windowsPowerShellPath(),
       [
         ...BASE_ARGS,
         "Get-CimInstance -ClassName Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' } | Select-Object -First 1 -ExpandProperty Name",
@@ -47,10 +143,10 @@ export async function verifyWindowsAuthenticode(
 ): Promise<AuthenticodeCheckResult> {
   try {
     const { stdout } = await runFile(
-      POWERSHELL,
+      windowsPowerShellPath(),
       [
         ...BASE_ARGS,
-        "$sig = Get-AuthenticodeSignature -LiteralPath $env:LINGER_DRIVER_EXE; [PSCustomObject]@{ Status = [string]$sig.Status; Subject = if ($sig.SignerCertificate) { [string]$sig.SignerCertificate.Subject } else { '' } } | ConvertTo-Json -Compress",
+        "$sig = Get-AuthenticodeSignature -LiteralPath $env:LINGER_DRIVER_EXE; [PSCustomObject]@{ Status = [string]$sig.Status; Subject = if ($sig.SignerCertificate) { [string]$sig.SignerCertificate.Subject } else { '' }; SimpleName = if ($sig.SignerCertificate) { [string]$sig.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) } else { '' } } | ConvertTo-Json -Compress",
       ],
       {
         env: { ...process.env, LINGER_DRIVER_EXE: exePath },
@@ -58,17 +154,7 @@ export async function verifyWindowsAuthenticode(
         windowsHide: true,
       },
     );
-    const parsed: unknown = JSON.parse(stdout.trim());
-    if (!parsed || typeof parsed !== "object") {
-      return { valid: false };
-    }
-    const record = parsed as { Status?: unknown; Subject?: unknown };
-    const status = typeof record.Status === "string" ? record.Status : "";
-    const subject = typeof record.Subject === "string" ? record.Subject : "";
-    return {
-      valid: status === "Valid" && /\bNVIDIA Corporation\b/i.test(subject),
-      subject,
-    };
+    return parseAuthenticodeOutput(stdout);
   } catch {
     return { valid: false };
   }
@@ -76,17 +162,18 @@ export async function verifyWindowsAuthenticode(
 
 /**
  * Runs a verified NVIDIA Windows DCH installer with UAC elevation in silent,
- * non-rebooting mode (`-s -noreboot -noeula`) and classifies its exit code.
+ * non-rebooting mode (`-s -noreboot -noeula`) and classifies its structured
+ * exit code or Win32 error code (`1223` = UAC cancelled).
  */
 export async function runWindowsDriverInstaller(
   exePath: string,
 ): Promise<WindowsInstallerRunResult> {
   try {
     const { stdout } = await runFile(
-      POWERSHELL,
+      windowsPowerShellPath(),
       [
         ...BASE_ARGS,
-        "$ErrorActionPreference = 'Stop'; $p = Start-Process -FilePath $env:LINGER_DRIVER_EXE -ArgumentList @('-s','-noreboot','-noeula') -Verb RunAs -Wait -PassThru; Write-Output $p.ExitCode",
+        "$ErrorActionPreference = 'Stop'; try { $p = Start-Process -FilePath $env:LINGER_DRIVER_EXE -ArgumentList @('-s','-noreboot','-noeula') -Verb RunAs -Wait -PassThru; [PSCustomObject]@{ exitCode = $p.ExitCode } | ConvertTo-Json -Compress } catch { $e = $_.Exception; $win32 = $null; while ($e) { if ($e -is [System.ComponentModel.Win32Exception]) { $win32 = $e.NativeErrorCode; break }; $e = $e.InnerException }; [PSCustomObject]@{ win32Error = $win32 } | ConvertTo-Json -Compress }",
       ],
       {
         env: { ...process.env, LINGER_DRIVER_EXE: exePath },
@@ -94,29 +181,8 @@ export async function runWindowsDriverInstaller(
         windowsHide: true,
       },
     );
-    const exitCode = Number.parseInt(stdout.trim(), 10);
-    if (exitCode === 0) return { outcome: "completed" };
-    if (exitCode === 1 || exitCode === 3010) {
-      return { outcome: "reboot_required" };
-    }
-    return {
-      outcome: "failed",
-      exitCode: Number.isNaN(exitCode) ? undefined : exitCode,
-    };
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const stderr =
-      error && typeof error === "object" && "stderr" in error
-        ? String((error as { stderr?: unknown }).stderr ?? "")
-        : "";
-    const combined = `${detail}\n${stderr}`;
-    if (
-      /\b1223\b|cancel(?:ed|led)\s+by\s+the\s+user|operation\s+was\s+cancel(?:ed|led)/i.test(
-        combined,
-      )
-    ) {
-      return { outcome: "uac_cancelled" };
-    }
+    return parseWindowsInstallerRunOutput(stdout);
+  } catch {
     return { outcome: "failed" };
   }
 }

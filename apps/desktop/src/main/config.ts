@@ -75,7 +75,6 @@ const desktopConfig = z.object({
   pendingDriverUpdate: z
     .object({
       targetVersion: z.string().min(1),
-      requiredCuda: z.string().optional(),
       resumeModelId: z.string().optional(),
       updatedAt: z.string().min(1),
     })

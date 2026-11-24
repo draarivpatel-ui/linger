@@ -3867,7 +3867,7 @@
           case "cuda-driver-update-required": {
             const has = reason.detectedCudaVersion;
             const needs = reason.requiredCudaVersion;
-            const driver = reason.requiredDriverVersion;
+            const driver = window.lingerSetup.minDriverForCuda?.(needs);
             if (has && needs)
               return driver
                 ? t("reasonCudaUpdateDriver", {
@@ -4932,15 +4932,16 @@
                   entry.code === "cuda-driver-version-unknown",
               )
             : undefined;
+        const requiredDriver = window.lingerSetup.minDriverForCuda?.(
+          reason?.requiredCudaVersion,
+        );
         void run(
           {
             op: "driver.start-install",
             ...(reason?.requiredCudaVersion
               ? { requiredCuda: reason.requiredCudaVersion }
               : {}),
-            ...(reason?.requiredDriverVersion
-              ? { requiredDriver: reason.requiredDriverVersion }
-              : {}),
+            ...(requiredDriver ? { requiredDriver } : {}),
           },
           "local-error",
         );

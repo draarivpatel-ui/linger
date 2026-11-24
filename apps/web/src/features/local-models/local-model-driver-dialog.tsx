@@ -8,7 +8,6 @@ import {
   NVIDIA_DRIVER_GUIDE_URL,
   NVIDIA_SMI_VERIFY_COMMAND,
   classifyWindowsNvidiaGpu,
-  defaultLinuxNvidiaDistro,
   linuxNvidiaDriverCommand,
   resolveRequiredNvidiaDriver,
   type DesktopDriverInstallState,
@@ -109,10 +108,7 @@ export function UpdateDriverDialog({
     Boolean(desktopBridge?.capabilities?.directInstallSupported) &&
     classifyWindowsNvidiaGpu(gpuName) !== "unsupported";
 
-  const [distro, setDistro] = useState<LinuxNvidiaDistro>(() => {
-    const initial = defaultLinuxNvidiaDistro(host?.os_label);
-    return initial === "fedora" ? "fedora" : "ubuntu";
-  });
+  const [distro, setDistro] = useState<LinuxNvidiaDistro>("ubuntu");
   const [copiedTarget, setCopiedTarget] = useState<"command" | "gpu" | null>(
     null,
   );

@@ -12,6 +12,7 @@ import {
   type DesktopDriverInstallState,
   type DesktopNvidiaAppKind,
 } from "@linger/service-kit/nvidia-driver";
+import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
@@ -25,7 +26,6 @@ export interface DetectedWindowsNvidiaApp {
 
 export interface PendingDriverUpdateRecord {
   readonly targetVersion: string;
-  readonly requiredCuda?: string;
   readonly resumeModelId?: string;
   readonly updatedAt: string;
 }
@@ -208,6 +208,7 @@ function isActivePhase(state: DesktopDriverInstallState): boolean {
 export class DriverUpdater implements DriverUpdaterHost {
   readonly #options: DriverUpdaterOptions;
   #state: DesktopDriverInstallState = { phase: "idle" };
+  #starting = false;
   #activeRun: Promise<void> | undefined;
 
   constructor(options: DriverUpdaterOptions) {
@@ -275,7 +276,7 @@ export class DriverUpdater implements DriverUpdaterHost {
   }
 
   clearInstallState(): void {
-    if (this.#activeRun) return;
+    if (this.#starting || this.#activeRun) return;
     this.#options.directInstall?.writePendingUpdate(undefined);
     this.#setState({ phase: "idle" });
   }
@@ -286,13 +287,22 @@ export class DriverUpdater implements DriverUpdaterHost {
     if (!this.#supportsDirectInstall()) {
       return { ok: false, reason: "unsupported" };
     }
-    if (this.#activeRun) {
+    if (this.#starting || this.#activeRun) {
       return { ok: false, reason: "busy" };
     }
     const direct = this.#options.directInstall!;
-    const gpuName = request.gpuName?.trim() || (await direct.detectGpuName());
+    this.#starting = true;
+    let gpuName: string | undefined;
+    try {
+      gpuName = request.gpuName?.trim() || (await direct.detectGpuName());
+    } catch {
+      this.#starting = false;
+      this.#fail("UNSUPPORTED_GPU");
+      return { ok: false, reason: "unsupported" };
+    }
     const gpuKind = classifyWindowsNvidiaGpu(gpuName);
     if (gpuKind === "unsupported") {
+      this.#starting = false;
       this.#fail("UNSUPPORTED_GPU");
       return { ok: false, reason: "unsupported" };
     }
@@ -310,6 +320,7 @@ export class DriverUpdater implements DriverUpdaterHost {
       this.#activeRun = undefined;
       this.#options.onBusyChange?.(false);
     });
+    this.#starting = false;
     this.#options.onBusyChange?.(true);
     return { ok: true };
   }
@@ -361,34 +372,36 @@ export class DriverUpdater implements DriverUpdaterHost {
     requiredDriver: string | undefined,
     request: DesktopDriverInstallRequest,
   ): Promise<void> {
-    const fetchImpl = direct.fetch ?? fetch;
-    const pkg = await this.#lookupPackage(gpuKind, fetchImpl);
-    if (!pkg) {
-      this.#fail("LOOKUP_FAILED");
-      return;
-    }
-    if (
-      requiredDriver &&
-      compareDriverVersions(pkg.version, requiredDriver) < 0
-    ) {
-      this.#fail("VERSION_TOO_OLD");
-      return;
-    }
-
-    const fileName = `nvidia-${pkg.version}-${gpuKind}.exe`;
-    const exePath = path.join(direct.downloadDirectory, fileName);
-    const downloaded = await this.#downloadInstaller(
-      pkg.downloadUrl,
-      exePath,
-      pkg.version,
-      fetchImpl,
-    );
-    if (!downloaded) {
-      this.#fail("DOWNLOAD_FAILED");
-      return;
-    }
-
+    let exePath: string | undefined;
     try {
+      const fetchImpl = direct.fetch ?? fetch;
+      const pkg = await this.#lookupPackage(gpuKind, fetchImpl);
+      if (!pkg) {
+        this.#fail("LOOKUP_FAILED");
+        return;
+      }
+      if (
+        requiredDriver &&
+        compareDriverVersions(pkg.version, requiredDriver) < 0
+      ) {
+        this.#fail("VERSION_TOO_OLD");
+        return;
+      }
+
+      const nonce = randomBytes(6).toString("hex");
+      const fileName = `nvidia-${pkg.version}-${gpuKind}-${nonce}.exe`;
+      exePath = path.join(direct.downloadDirectory, fileName);
+      const downloaded = await this.#downloadInstaller(
+        pkg.downloadUrl,
+        exePath,
+        pkg.version,
+        fetchImpl,
+      );
+      if (!downloaded) {
+        this.#fail("DOWNLOAD_FAILED");
+        return;
+      }
+
       this.#setState({ phase: "verifying", version: pkg.version });
       const signature = await direct.verifyAuthenticode(exePath);
       if (!signature.valid) {
@@ -413,9 +426,6 @@ export class DriverUpdater implements DriverUpdaterHost {
         const nowIso = new Date((direct.now ?? Date.now)()).toISOString();
         direct.writePendingUpdate({
           targetVersion: pkg.version,
-          ...(request.requiredCuda
-            ? { requiredCuda: request.requiredCuda }
-            : {}),
           ...(request.resumeModelId
             ? { resumeModelId: request.resumeModelId }
             : {}),
@@ -435,8 +445,12 @@ export class DriverUpdater implements DriverUpdaterHost {
         return;
       }
       this.#fail("INSTALL_FAILED");
+    } catch {
+      this.#fail("INSTALL_FAILED");
     } finally {
-      await rm(exePath, { force: true }).catch(() => undefined);
+      if (exePath) {
+        await rm(exePath, { force: true }).catch(() => undefined);
+      }
     }
   }
 
@@ -459,7 +473,10 @@ export class DriverUpdater implements DriverUpdaterHost {
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const response = await fetchImpl(url.toString());
+        const response = await fetchImpl(url.toString(), {
+          redirect: "manual",
+          signal: AbortSignal.timeout(15_000),
+        });
         if (!response.ok) continue;
         const json: unknown = await response.json();
         const parsed = parseNvidiaDriverLookupResponse(json);
@@ -478,11 +495,12 @@ export class DriverUpdater implements DriverUpdaterHost {
     fetchImpl: typeof fetch,
   ): Promise<boolean> {
     if (!isAllowedNvidiaDownloadUrl(initialUrl)) return false;
-    await mkdir(path.dirname(destPath), { recursive: true, mode: 0o700 });
     const partPath = `${destPath}.part`;
-    await rm(partPath, { force: true }).catch(() => undefined);
 
     try {
+      await mkdir(path.dirname(destPath), { recursive: true, mode: 0o700 });
+      await rm(partPath, { force: true }).catch(() => undefined);
+
       const response = await this.#fetchFollowingAllowedRedirects(
         initialUrl,
         fetchImpl,
@@ -536,7 +554,7 @@ export class DriverUpdater implements DriverUpdaterHost {
       await pipeline(
         source,
         meter,
-        createWriteStream(partPath, { mode: 0o600 }),
+        createWriteStream(partPath, { flags: "wx", mode: 0o600 }),
       );
       if (parsedLength !== undefined && completedBytes !== parsedLength) {
         await rm(partPath, { force: true }).catch(() => undefined);
@@ -571,6 +589,7 @@ export class DriverUpdater implements DriverUpdaterHost {
         response.status === 307 ||
         response.status === 308
       ) {
+        await response.body?.cancel().catch(() => undefined);
         const location = response.headers.get("location");
         if (!location) return undefined;
         current = new URL(location, current).toString();

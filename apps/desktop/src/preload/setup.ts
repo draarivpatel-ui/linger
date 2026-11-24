@@ -1,3 +1,4 @@
+import { minNvidiaDriverForCuda } from "@linger/service-kit/nvidia-driver";
 import { contextBridge, ipcRenderer } from "electron";
 
 import {
@@ -14,6 +15,7 @@ const api: LingerSetupApi = {
   featuredAnnouncementUrl: INKLING_2_MINI_ANNOUNCEMENT_URL,
   nvidiaDriverDownloadUrl: NVIDIA_DRIVER_DOWNLOAD_URL,
   nvidiaDriverGuideUrl: NVIDIA_DRIVER_GUIDE_URL,
+  minDriverForCuda: (requiredCuda) => minNvidiaDriverForCuda(requiredCuda),
   getState: () => ipcRenderer.invoke(SETUP_IPC.state),
   onState: (callback) => {
     const listener = (_event: unknown, state: SetupState): void =>
