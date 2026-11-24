@@ -488,12 +488,18 @@ Gateway and runs Agents. The daemon exits with the app.
   the tray's install and check, for the SPA's account menu; `settings` exposes
   `preventSleep` (`get`, `set`, `onChange`) so Settings › Computers mirrors and
   stays in sync with the tray's Prevent Sleep toggle. Its `localGateway`
-  (`src/main/local-gateway.ts`) gives Settings › Models Advanced local-only
-  metadata (`username`, loopback `adminUrl`, `hasPassword`, `inferenceAuthDisabled`)
-  and explicit-action password reveal, 60 s auto-clearing clipboard copy,
-  loopback admin console launch, and gateway folder reveal for this desktop's
-  own enrolled `computerId` only (passwords never cross TeamHub and are read
-  fresh from the private `0600` `admin-password` file in the main process).
+  (`src/main/local-gateway.ts`) resolves this home's Bifrost gateway through
+  `resolveLocalmodelsBifrostLocation` in `@linger/local-installation` and gives
+  Settings › Models Advanced local-only metadata (`username`, loopback
+  `adminUrl`, `hasPassword`, `inferenceAuthDisabled`), explicit-action password
+  reveal, 60 s auto-clearing clipboard copy (shared with `SetupAccount` via
+  `src/main/secret-clipboard.ts`), loopback admin console launch, and gateway
+  folder reveal. The `serverUrl` origin check in `DesktopIpcModule` is the
+  security boundary — any script running on the configured TeamHub origin can
+  read the enrolled `computerId` from `computer.status` and invoke
+  `revealPassword`; the `computerId` check only routes the UI to this desktop's
+  enrolled computer. Passwords never cross TeamHub APIs and are read fresh from
+  the private `0600` `admin-password` file in the main process.
 - `src/shared/api.ts`, `src/shared/shell.ts`: preload contract types and IPC
   channel names.
 - `src/main/computer-daemon.ts`: ComputerDaemon. While the computer is
