@@ -398,6 +398,7 @@ export function ModelRow({
   disabled,
   entry,
   expanded,
+  gatewayUrl,
   inSpotlight = false,
   onAssignAgent,
   requested,
@@ -413,6 +414,7 @@ export function ModelRow({
   disabled: boolean;
   entry: ModelEntry;
   expanded: boolean;
+  gatewayUrl?: string;
   /** Rendered inside `FeaturedModelSpotlight`, which already carries the partner header. */
   inSpotlight?: boolean;
   onAssignAgent?: (agent: AssignableLocalModelAgent) => void;
@@ -738,6 +740,7 @@ export function ModelRow({
               computer={computer}
               disabled={disabled}
               entry={entry}
+              gatewayUrl={gatewayUrl}
               hasPrimaryAssignAction={showsPrimaryAssignButton}
               onAssignAgent={onAssignAgent}
               view={view}

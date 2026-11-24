@@ -1407,6 +1407,7 @@ function Library({
         disabled={offline || readOnly || switching || busy(modelId)}
         entry={entry}
         expanded={expandedId === modelId}
+        gatewayUrl={status?.gateway_url}
         inSpotlight={inSpotlight}
         key={modelId}
         onAssignAgent={
@@ -1640,7 +1641,11 @@ function Library({
       )}
 
       {dialog?.kind === "advanced" ? (
-        <AdvancedDialog onClose={() => setDialog(null)} view={view} />
+        <AdvancedDialog
+          gatewayUrl={status?.gateway_url}
+          onClose={() => setDialog(null)}
+          view={view}
+        />
       ) : null}
       {dialogEntry && makeRoom ? (
         <MakeRoomDialog
